@@ -1,0 +1,98 @@
+From f9bd9066c4cb744e916378d687c1e2d89b6ed03b Mon Sep 17 00:00:00 2001
+From: Starovoitov <arteom.starovoitov@yandex.ru>
+Date: Fri, 20 Apr 2018 00:24:29 +0300
+Subject: [PATCH 1/1] New optimization opcode is added - so bytecode is
+ expected to have lesser size. The chage catches a consequence of 2 already
+ existing opcodes - ( LOAD_Fast 0 | LOAD_CONST 1 ) and concatenates them by
+ replacing with new opcode
+
+---
+ Include/opcode.h  |  1 +
+ Lib/opcode.py     |  2 ++
+ Python/ceval.c    | 19 +++++++++++++++++--
+ Python/peephole.c |  9 +++++++++
+ 4 files changed, 29 insertions(+), 2 deletions(-)
+
+diff --git a/Include/opcode.h b/Include/opcode.h
+index 9764109..18a4880 100644
+--- a/Include/opcode.h
++++ b/Include/opcode.h
+@@ -150,6 +150,7 @@ extern "C" {
+ #define SET_ADD         146
+ #define MAP_ADD         147
+ 
++#define LOAD_OTUS	148
+ 
+ enum cmp_op {PyCmp_LT=Py_LT, PyCmp_LE=Py_LE, PyCmp_EQ=Py_EQ, PyCmp_NE=Py_NE, PyCmp_GT=Py_GT, PyCmp_GE=Py_GE,
+ 	     PyCmp_IN, PyCmp_NOT_IN, PyCmp_IS, PyCmp_IS_NOT, PyCmp_EXC_MATCH, PyCmp_BAD};
+diff --git a/Lib/opcode.py b/Lib/opcode.py
+index e403365..b927734 100644
+--- a/Lib/opcode.py
++++ b/Lib/opcode.py
+@@ -189,4 +189,6 @@ EXTENDED_ARG = 145
+ def_op('SET_ADD', 146)
+ def_op('MAP_ADD', 147)
+ 
++def_op('LOAD_OTUS', 148)
++
+ del def_op, name_op, jrel_op, jabs_op
+diff --git a/Python/ceval.c b/Python/ceval.c
+index 06ada97..9dee338 100644
+--- a/Python/ceval.c
++++ b/Python/ceval.c
+@@ -1108,7 +1108,22 @@ PyEval_EvalFrameEx(PyFrameObject *f, int throwflag)
+         case NOP:
+             goto fast_next_opcode;
+ 
+-        case LOAD_FAST:
++	case LOAD_OTUS:
++	   x = GETLOCAL(0);
++	   if (x != NULL) {
++    		Py_INCREF(x);
++    		PUSH(x);
++    		x = GETITEM(consts, oparg);
++    		Py_INCREF(x);
++    		PUSH(x);
++    		goto fast_next_opcode;
++		}
++	    format_exc_check_arg(PyExc_UnboundLocalError,
++                     UNBOUNDLOCAL_ERROR_MSG,
++                     PyTuple_GetItem(co->co_varnames, oparg));
++	    break;
++	
++	case LOAD_FAST:
+             x = GETLOCAL(oparg);
+             if (x != NULL) {
+                 Py_INCREF(x);
+@@ -1124,7 +1139,7 @@ PyEval_EvalFrameEx(PyFrameObject *f, int throwflag)
+             x = GETITEM(consts, oparg);
+             Py_INCREF(x);
+             PUSH(x);
+-            goto fast_next_opcode;
++            goto fast_next_opcode;	
+ 
+         PREDICTED_WITH_ARG(STORE_FAST);
+         case STORE_FAST:
+diff --git a/Python/peephole.c b/Python/peephole.c
+index fb6cd03..f9ec52f 100644
+--- a/Python/peephole.c
++++ b/Python/peephole.c
+@@ -423,6 +423,15 @@ PyCode_Optimize(PyObject *code, PyObject* consts, PyObject *names,
+                 cumlc = 0;
+                 break;
+ 
++	    case LOAD_FAST:
++                j = GETARG(codestr, i);
++                if (codestr[i+3] == LOAD_CONST && j == 0) 
++		{
++                    codestr[i+3] = LOAD_OTUS;
++                    memset(codestr+i, NOP, 3);
++                }
++                break;
++
+                 /* Try to fold tuples of constants (includes a case for lists
+                    which are only used for "in" and "not in" tests).
+                    Skip over BUILD_SEQN 1 UNPACK_SEQN 1.
+-- 
+2.7.4
+
