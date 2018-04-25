@@ -62,8 +62,10 @@ extern "C" {
 #define AT              50	
 /* Don't forget to update the table _PyParser_TokenNames in tokenizer.c! */
 #define OP		51
-#define ERRORTOKEN	52
-#define N_TOKENS	53
+#define INCREMENT   52
+#define DECREMENT   53
+#define ERRORTOKEN	54
+#define N_TOKENS	55
 
 /* Special definitions for cooperation with parser */
 
